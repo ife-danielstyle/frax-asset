@@ -112,3 +112,113 @@
     quorum-threshold: uint,
   }
 )
+
+;; Voting Records - Prevents double voting
+(define-map votes
+  {
+    proposal-id: uint,
+    voter: principal,
+  }
+  { vote-weight: uint }
+)
+
+;; Dividend Distribution Tracker - Yield management
+(define-map dividend-claims
+  {
+    asset-id: uint,
+    beneficiary: principal,
+  }
+  { last-claimed-total: uint }
+)
+
+;; Oracle Price Feeds - Real-time asset valuation
+(define-map price-feeds
+  { asset-id: uint }
+  {
+    current-price: uint,
+    decimal-precision: uint,
+    last-update-height: uint,
+    oracle-provider: principal,
+  }
+)
+
+;; INPUT VALIDATION FRAMEWORK
+
+(define-private (is-valid-asset-value (value uint))
+  (and
+    (>= value MIN-ASSET-VALUE)
+    (<= value MAX-ASSET-VALUE)
+  )
+)
+
+(define-private (is-valid-proposal-duration (duration uint))
+  (and
+    (>= duration MIN-PROPOSAL-DURATION)
+    (<= duration MAX-PROPOSAL-DURATION)
+  )
+)
+
+(define-private (is-valid-kyc-level (level uint))
+  (<= level MAX-KYC-COMPLIANCE-LEVEL)
+)
+
+(define-private (is-valid-expiry (expiry uint))
+  (and
+    (> expiry stacks-block-height)
+    (<= (- expiry stacks-block-height) MAX-VALIDITY-PERIOD)
+  )
+)
+
+(define-private (is-valid-vote-threshold (threshold uint))
+  (and
+    (> threshold u0)
+    (<= threshold TOKENS-PER-ASSET)
+  )
+)
+
+(define-private (is-valid-metadata-uri (uri (string-ascii 256)))
+  (and
+    (> (len uri) u0)
+    (<= (len uri) u256)
+  )
+)
+
+;; UTILITY FUNCTIONS
+
+;; Generate sequential asset IDs (implementation placeholder)
+(define-private (generate-next-asset-id)
+  (default-to u1 (get-last-registered-asset-id))
+)
+
+;; Generate sequential proposal IDs (implementation placeholder)
+(define-private (generate-next-proposal-id)
+  (default-to u1 (get-last-created-proposal-id))
+)
+
+;; Retrieve highest asset ID (to be implemented with counter)
+(define-private (get-last-registered-asset-id)
+  none
+)
+
+;; Retrieve highest proposal ID (to be implemented with counter)
+(define-private (get-last-created-proposal-id)
+  none
+)
+
+;; CORE PUBLIC INTERFACE
+
+;; --------------------------------------------------------------------------------
+;; Asset Registration & Tokenization
+;; --------------------------------------------------------------------------------
+
+(define-public (register-asset-for-tokenization
+    (metadata-uri (string-ascii 256))
+    (initial-valuation uint)
+  )
+  (begin
+    ;; Validate caller permissions
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-OWNER-ONLY)
+
+    ;; Validate input parameters
+    (asserts! (is-valid-metadata-uri metadata-uri) ERR-INVALID-URI)
+    (asserts! (is-valid-asset-value initial-valuation) ERR-INVALID-VALUE)
