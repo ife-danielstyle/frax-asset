@@ -222,3 +222,112 @@
     ;; Validate input parameters
     (asserts! (is-valid-metadata-uri metadata-uri) ERR-INVALID-URI)
     (asserts! (is-valid-asset-value initial-valuation) ERR-INVALID-VALUE)
+
+    (let ((new-asset-id (generate-next-asset-id)))
+      ;; Create asset registry entry
+      (map-set assets { asset-id: new-asset-id } {
+        owner: CONTRACT-OWNER,
+        metadata-uri: metadata-uri,
+        asset-value: initial-valuation,
+        is-locked: false,
+        creation-height: stacks-block-height,
+        last-price-update: stacks-block-height,
+        total-dividends: u0,
+      })
+
+      ;; Allocate initial token supply to owner
+      (map-set token-balances {
+        owner: CONTRACT-OWNER,
+        asset-id: new-asset-id,
+      } { balance: TOKENS-PER-ASSET }
+      )
+
+      (ok new-asset-id)
+    )
+  )
+)
+
+;; --------------------------------------------------------------------------------
+;; Dividend Distribution System
+;; --------------------------------------------------------------------------------
+
+(define-public (claim-available-dividends (asset-id uint))
+  (let (
+      (asset-info (unwrap! (get-asset-details asset-id) ERR-NOT-FOUND))
+      (holder-balance (get-token-balance tx-sender asset-id))
+      (previous-claim (get-previous-dividend-claim asset-id tx-sender))
+      (total-distributed (get total-dividends asset-info))
+      (claimable-amount (/ (* holder-balance (- total-distributed previous-claim)) TOKENS-PER-ASSET))
+    )
+    ;; Ensure there are dividends to claim
+    (asserts! (> claimable-amount u0) ERR-INVALID-AMOUNT)
+
+    ;; Update claim record
+    (ok (map-set dividend-claims {
+      asset-id: asset-id,
+      beneficiary: tx-sender,
+    } { last-claimed-total: total-distributed }
+    ))
+  )
+)
+
+;; --------------------------------------------------------------------------------
+;; Governance & Proposal System
+;; --------------------------------------------------------------------------------
+
+(define-public (create-governance-proposal
+    (target-asset-id uint)
+    (proposal-title (string-ascii 256))
+    (voting-duration uint)
+    (quorum-requirement uint)
+  )
+  (begin
+    ;; Validate proposal parameters
+    (asserts! (is-valid-proposal-duration voting-duration) ERR-INVALID-DURATION)
+    (asserts! (is-valid-vote-threshold quorum-requirement) ERR-INSUFFICIENT-VOTES)
+    (asserts! (is-valid-metadata-uri proposal-title) ERR-INVALID-TITLE)
+
+    ;; Verify proposer has minimum stake (10% of total supply)
+    (asserts!
+      (>= (get-token-balance tx-sender target-asset-id) (/ TOKENS-PER-ASSET u10))
+      ERR-NOT-AUTHORIZED
+    )
+
+    (let ((new-proposal-id (generate-next-proposal-id)))
+      (ok (map-set proposals { proposal-id: new-proposal-id } {
+        title: proposal-title,
+        target-asset-id: target-asset-id,
+        start-height: stacks-block-height,
+        end-height: (+ stacks-block-height voting-duration),
+        is-executed: false,
+        affirmative-votes: u0,
+        negative-votes: u0,
+        quorum-threshold: quorum-requirement,
+      }))
+    )
+  )
+)
+
+;; --------------------------------------------------------------------------------
+;; Democratic Voting System
+;; --------------------------------------------------------------------------------
+
+(define-public (cast-governance-vote
+    (proposal-id uint)
+    (support-proposal bool)
+    (voting-weight uint)
+  )
+  (let (
+      (proposal-info (unwrap! (get-proposal-details proposal-id) ERR-NOT-FOUND))
+      (target-asset (get target-asset-id proposal-info))
+      (voter-balance (get-token-balance tx-sender target-asset))
+    )
+    (begin
+      ;; Validate voting conditions
+      (asserts! (>= voter-balance voting-weight) ERR-INVALID-AMOUNT)
+      (asserts! (< stacks-block-height (get end-height proposal-info))
+        ERR-VOTING-ENDED
+      )
+      (asserts! (is-none (get-voting-record proposal-id tx-sender))
+        ERR-VOTE-EXISTS
+      )
