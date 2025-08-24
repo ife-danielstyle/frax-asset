@@ -331,3 +331,83 @@
       (asserts! (is-none (get-voting-record proposal-id tx-sender))
         ERR-VOTE-EXISTS
       )
+
+      ;; Record the vote
+      (map-set votes {
+        proposal-id: proposal-id,
+        voter: tx-sender,
+      } { vote-weight: voting-weight }
+      )
+
+      ;; Update proposal vote tallies
+      (ok (map-set proposals { proposal-id: proposal-id }
+        (merge proposal-info {
+          affirmative-votes: (if support-proposal
+            (+ (get affirmative-votes proposal-info) voting-weight)
+            (get affirmative-votes proposal-info)
+          ),
+          negative-votes: (if support-proposal
+            (get negative-votes proposal-info)
+            (+ (get negative-votes proposal-info) voting-weight)
+          ),
+        })
+      ))
+    )
+  )
+)
+
+;; READ-ONLY QUERY INTERFACE
+
+;; Retrieve comprehensive asset information
+(define-read-only (get-asset-details (asset-id uint))
+  (map-get? assets { asset-id: asset-id })
+)
+
+;; Query token balance for any principal
+(define-read-only (get-token-balance
+    (holder principal)
+    (asset-id uint)
+  )
+  (default-to u0
+    (get balance
+      (map-get? token-balances {
+        owner: holder,
+        asset-id: asset-id,
+      })
+    ))
+)
+
+;; Retrieve governance proposal information
+(define-read-only (get-proposal-details (proposal-id uint))
+  (map-get? proposals { proposal-id: proposal-id })
+)
+
+;; Query individual voting records
+(define-read-only (get-voting-record
+    (proposal-id uint)
+    (voter principal)
+  )
+  (map-get? votes {
+    proposal-id: proposal-id,
+    voter: voter,
+  })
+)
+
+;; Access oracle price feed data
+(define-read-only (get-price-feed-data (asset-id uint))
+  (map-get? price-feeds { asset-id: asset-id })
+)
+
+;; Retrieve dividend claim history
+(define-read-only (get-previous-dividend-claim
+    (asset-id uint)
+    (beneficiary principal)
+  )
+  (default-to u0
+    (get last-claimed-total
+      (map-get? dividend-claims {
+        asset-id: asset-id,
+        beneficiary: beneficiary,
+      })
+    ))
+)
